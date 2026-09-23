@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Crypto Desk — Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121821;
+    --border: #1e2a38;
+    --text: #e7eef7;
+    --muted: #8aa0b5;
+    --green: #3dd68c;
+    --red: #ff6b6b;
+    --amber: #ffc857;
+    --blue: #5bb0ff;
+    --purple: #b39dff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.4;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--border); background: #0e141c;
+    position: sticky; top: 0; z-index: 10;
+  }
+  h1 { font-size: 1.1rem; margin: 0; font-weight: 650; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); background: var(--panel);
+  }
+  .badge.live { color: var(--green); border-color: #1f4d38; }
+  .badge.paper { color: var(--amber); border-color: #5a4520; }
+  .grid {
+    display: grid; gap: 14px; padding: 16px 20px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px;
+  }
+  .panel h2 {
+    margin: 0 0 10px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 550; font-size: 0.75rem; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+  .status { font-weight: 650; }
+  .status.open { color: var(--green); }
+  .status.watch { color: var(--blue); }
+  .status.hold { color: var(--amber); }
+  .status.backup { color: var(--purple); }
+  .kpi { display: flex; flex-wrap: wrap; gap: 10px; }
+  .kpi .item {
+    flex: 1 1 120px; background: #0b1118; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  }
+  .kpi .label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi .value { font-size: 1.15rem; font-weight: 700; margin-top: 2px; }
+  .legend { color: var(--muted); font-size: 0.82rem; padding: 0 20px 20px; }
+  .err { color: var(--red); font-size: 0.85rem; }
+  button {
+    background: #1a2430; color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; cursor: pointer; font-size: 0.85rem;
+  }
+  button:hover { border-color: #3a4d63; }
+  .wide { grid-column: 1 / -1; }
+  code { font-size: 0.85em; color: #c9d7e6; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Crypto Desk — Dashboard</h1>
+    <div class="meta">Solo research / paper · 🚫 live · capital paper 1000 USD</div>
+  </div>
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <span class="badge paper">📝 PAPER</span>
+    <span class="badge live" id="feedBadge">⏳ cargando precios…</span>
+    <button id="refreshBtn" type="button">Actualizar</button>
+  </div>
+</header>
+
+<section class="grid">
+  <div class="panel">
+    <h2>Exposición</h2>
+    <div class="kpi" id="kpis">
+      <div class="item"><div class="label">Capital</div><div class="value">1000 USD</div></div>
+      <div class="item"><div class="label">Abiertas</div><div class="value" id="kpiOpen">—</div></div>
+      <div class="item"><div class="label">Riesgo abierto</div><div class="value" id="kpiRisk">—</div></div>
+      <div class="item"><div class="label">Headroom diario</div><div class="value" id="kpiHead">—</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Reglas</h2>
+    <table>
+      <tr><th>Regla</th><th>Valor</th></tr>
+      <tr><td>Riesgo / trade</td><td>25% (tope efectivo vía ≤10x)</td></tr>
+      <tr><td>Pérdida diaria</td><td>25%</td></tr>
+      <tr><td>Apalancamiento</td><td>≤10x</td></tr>
+      <tr><td>Simultáneas</td><td>máx 10</td></tr>
+      <tr><td>ETH si A′/cupo</td><td>máx 0.5% (5 USD)</td></tr>
+      <tr><td>Circuito</td><td>📋 → ✅ Nicolás → 📝 al trigger</td></tr>
+    </table>
+  </div>
+
+  <div class="panel wide">
+    <h2>Libro paper + watches</h2>
+    <div id="bookErr" class="err" hidden></div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Par</th><th>Estado</th><th>Precio</th><th>Entrada / trigger</th>
+          <th>Stop</th><th>Targets</th><th>Riesgo</th><th>PnL est.</th><th>Notas</th>
+        </tr>
+      </thead>
+      <tbody id="bookBody"></tbody>
+    </table>
+    <div class="meta" style="margin-top:8px" id="updatedAt"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Alertas (lun–vie ART)</h2>
+    <table>
+      <tr><th>Código</th><th>Qué</th><th>Horario</th></tr>
+      <tr><td>A</td><td>Watch fichas/PT</td><td>cada 30m 9:06–18:36</td></tr>
+      <tr><td>B</td><td>Funding/OI</td><td>9/12/15/18:06</td></tr>
+      <tr><td>C</td><td>Spreads/arb</td><td>10/13/16:06</td></tr>
+      <tr><td>D</td><td>News impacto</td><td>9/13/17:06</td></tr>
+      <tr><td>E</td><td>Digest</td><td>9:06 y 18:06</td></tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Pendientes Nicolás</h2>
+    <ul style="margin:0; padding-left:18px; color:var(--muted); font-size:0.92rem;">
+      <li>ETH: reconfirm ✅ pese a outflow ETF ~−79M, o ❌ / esperar (Riesgo HOLD)</li>
+      <li>Borrar Crypto Desk viejo del sidebar si sigue</li>
+      <li>Exchanges / APIs solo lectura cuando quieras</li>
+    </ul>
+  </div>
+</section>
+
+<p class="legend">
+  Leyenda: 📝 paper fill · 👀 watch · HOLD · backup · 🚫 live.
+  Precios vía CoinGecko (actualiza cada 20s). Actualización cada 20s. Este archivo es un artefacto local; el ledger “oficial” sigue en el canal Crypto Desk / Paper.
+</p>
+
+<script>
+const DAILY_MAX = 250; // 25% of 1000
+const book = [
+  {
+    id: "PT-001",
+    pair: "DOGE-USDT",
+    okx: "DOGE-USDT",
+    status: "open",
+    statusLabel: "📝 ABIERTA",
+    entry: 0.09191,
+    stop: 0.0875,
+    targets: "T1 0.095 ≤20% · T2 0.098",
+    riskUsd: 25,
+    notional: 520,
+    note: "Opp · gate BTC >83500 · plan T2"
+  },
+  {
+    id: "A′",
+    pair: "BTC-USDT",
+    okx: "BTC-USDT",
+    status: "watch",
+    statusLabel: "👀 WATCH",
+    entry: 84800,
+    entryLabel: "reclaim >84800",
+    stop: 83500,
+    targets: "85945 ≤30% → 86500 → ~87300",
+    riskUsd: 165,
+    riskLabel: "~150–180",
+    note: "✅ Nicolás · sin fill hasta reclaim"
+  },
+  {
+    id: "ETH",
+    pair: "ETH-USDT",
+    okx: "ETH-USDT",
+    status: "hold",
+    statusLabel: "HOLD",
+    entry: 2685,
+    entryLabel: "reclaim >2685 (15m sostenido)",
+    stop: 2635,
+    targets: "2740 / 2755–2775 · T2 primario si GO",
+    riskUsd: 5,
+    note: "Outflow ETF 23 Sep ~−79M · falta reconfirm Nicolás"
+  },
+  {
+    id: "TRX",
+    pair: "TRX-USDT",
+    okx: "TRX-USDT",
+    status: "backup",
+    statusLabel: "👀 BACKUP",
+    entry: 0.340,
+    entryLabel: "~0.340",
+    stop: 0.332,
+    targets: "0.348 / 0.355",
+    riskUsd: 25,
+    note: "Sin stack mientras DOGE viva"
+  }
+];
+
+function fmt(n, d = 2) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return Number(n).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: 0 });
+}
+
+function pnlEst(row, last) {
+  if (row.status !== "open" || last == null) return "—";
+  const qty = row.notional / row.entry;
+  const pnl = (last - row.entry) * qty;
+  const cls = pnl >= 0 ? "up" : "down";
+  return `<span class="${cls}">${pnl >= 0 ? "+" : ""}${fmt(pnl, 2)} USD</span>`;
+}
+
+function dist(label, last, level, higherIsTrigger) {
+  if (last == null || level == null) return "";
+  const gap = last - level;
+  if (higherIsTrigger) {
+    return gap >= 0 ? `<span class="up">+${fmt(gap, level > 100 ? 1 : 5)}</span>` : `<span class="down">${fmt(gap, level > 100 ? 1 : 5)}</span>`;
+  }
+  return "";
+}
+
+const CG = {
+  "BTC-USDT": "bitcoin",
+  "ETH-USDT": "ethereum",
+  "DOGE-USDT": "dogecoin",
+  "TRX-USDT": "tron"
+};
+
+async function fetchPrices() {
+  const ids = [...new Set(book.map(b => CG[b.okx]))].join(",");
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
+  const data = await res.json();
+  const prices = {};
+  for (const row of book) {
+    const id = CG[row.okx];
+    const last = Number(data?.[id]?.usd);
+    if (last) prices[row.okx] = last;
+  }
+  if (!Object.keys(prices).length) throw new Error("CoinGecko sin precios");
+  return prices;
+}
+
+function render(prices) {
+  const open = book.filter(b => b.status === "open");
+  const riskOpen = open.reduce((s, b) => s + b.riskUsd, 0);
+  document.getElementById("kpiOpen").textContent = String(open.length);
+  document.getElementById("kpiRisk").textContent = `${fmt(riskOpen, 0)} USD (~${fmt(riskOpen / 10, 1)}%)`;
+  document.getElementById("kpiHead").textContent = `${fmt(DAILY_MAX - riskOpen, 0)} USD`;
+
+  const body = document.getElementById("bookBody");
+  body.innerHTML = book.map(row => {
+    const last = prices[row.okx];
+    const entryCell = row.entryLabel
+      ? `${row.entryLabel}<br><span class="meta">last ${fmt(last, row.entry < 1 ? 5 : 2)}</span>`
+      : fmt(row.entry, row.entry < 1 ? 5 : 2);
+    let triggerHint = "";
+    if (row.id === "A′" && last != null) triggerHint = `<br>gap ${fmt(last - 84800, 1)}`;
+    if (row.id === "ETH" && last != null) triggerHint = `<br>vs 2685: ${fmt(last - 2685, 2)}`;
+    if (row.id === "PT-001" && last != null) {
+      const toStop = last - row.stop;
+      const toT2 = 0.098 - last;
+      triggerHint = `<br>a stop ${fmt(toStop, 5)} · a T2 ${fmt(toT2, 5)}`;
+    }
+    return `<tr>
+      <td><code>${row.id}</code></td>
+      <td>${row.pair}</td>
+      <td class="status ${row.status}">${row.statusLabel}</td>
+      <td>${last == null ? "—" : fmt(last, last < 1 ? 5 : 2)}</td>
+      <td>${entryCell}${triggerHint}</td>
+      <td>${fmt(row.stop, row.stop < 1 ? 5 : 2)}</td>
+      <td>${row.targets}</td>
+      <td>${row.riskLabel || (row.riskUsd + " USD")}</td>
+      <td>${pnlEst(row, last)}</td>
+      <td class="meta">${row.note}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("updatedAt").textContent =
+    `Actualizado ${new Date().toLocaleString("es-AR", { timeZone: "America/Buenos_Aires" })} ART`;
+}
+
+async function refresh() {
+  const badge = document.getElementById("feedBadge");
+  const err = document.getElementById("bookErr");
+  err.hidden = true;
+  try {
+    const prices = await fetchPrices();
+    render(prices);
+    badge.textContent = "🟢 precios CoinGecko live";
+    badge.classList.add("live");
+  } catch (e) {
+    render({});
+    badge.textContent = "⚠️ sin feed (abrí el archivo o revisá red)";
+    err.hidden = false;
+    err.textContent = String(e.message || e);
+  }
+}
+
+document.getElementById("refreshBtn").addEventListener("click", refresh);
+refresh();
+setInterval(refresh, 20000);
+</script>
+</body>
+</html>
